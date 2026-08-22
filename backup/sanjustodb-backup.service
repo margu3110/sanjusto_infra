@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup sanjustodb MySQL database
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-sanjustodb

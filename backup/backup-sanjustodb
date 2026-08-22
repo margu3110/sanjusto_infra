@@ -1,0 +1,67 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+BACKUP_DIR="/backups/mysql"
+CONTAINER="sanjusto_mysql"
+DATABASE="sanjustodb"
+RETENTION_DAYS=14
+
+TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
+BACKUP_FILE="${BACKUP_DIR}/${DATABASE}-${TIMESTAMP}.sql.gz"
+TEMP_FILE="${BACKUP_FILE}.tmp"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S %z') - $*"
+}
+
+cleanup() {
+    rm -f "$TEMP_FILE"
+}
+
+trap cleanup EXIT
+
+log "Starting MySQL backup"
+log "Database: ${DATABASE}"
+log "Container: ${CONTAINER}"
+log "Destination: ${BACKUP_FILE}"
+
+if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q '^true$'; then
+    log "ERROR: MySQL container ${CONTAINER} is not running"
+    exit 1
+fi
+
+if ! docker exec "$CONTAINER" sh -c '
+    MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump \
+        -uroot \
+        --single-transaction \
+        --routines \
+        --triggers \
+        --events \
+        "$1"
+' sh "$DATABASE" | gzip > "$TEMP_FILE"; then
+    log "ERROR: mysqldump failed"
+    exit 1
+fi
+
+if ! gzip -t "$TEMP_FILE"; then
+    log "ERROR: gzip integrity check failed"
+    exit 1
+fi
+
+mv "$TEMP_FILE" "$BACKUP_FILE"
+
+chown root:backup-readers "$BACKUP_FILE"
+chmod 640 "$BACKUP_FILE"
+
+log "Backup completed successfully"
+log "Backup size: $(du -h "$BACKUP_FILE" | cut -f1)"
+
+find "$BACKUP_DIR" \
+    -type f \
+    -name "${DATABASE}-*.sql.gz" \
+    -mtime +"$RETENTION_DAYS" \
+    -print \
+    -delete
+
+log "Retention cleanup completed"
