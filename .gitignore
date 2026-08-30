@@ -32,3 +32,9 @@ terraform.rc
 # ==========================================
 # Plans can contain sensitive data. Ignore them by default.
 *.tfplan
+
+# Terraform working directory
+**/.terraform/
+
+# Terragrunt cache
+**/.terragrunt-cache/
